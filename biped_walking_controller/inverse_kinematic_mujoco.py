@@ -1,253 +1,172 @@
+import string
+import time
 import typing
 from dataclasses import dataclass
 from typing import Any
 
 import mujoco
+import mujoco.viewer
 import numpy as np
 
-import pinocchio as pin
+# import pinocchio as pin
 from qpsolvers import solve_qp
+import mink
+from mink import SE3, SO3
+from biped_walking_controller.model_mujoco import Exo
+
 
 
 @dataclass
-class InvKinSolverParams:
+class InvKinSolverParamsMujoco:
     """
     Parameters for inverse-kinematics QP with CoM, feet, and torso tasks.
 
     Attributes
     ----------
-    fixed_foot_frame : int
-        Pinocchio frame id of the stance foot (hard equality).
-    moving_foot_frame : int
-        Pinocchio frame id of the swing foot (soft task).
-    torso_frame : int
-        Pinocchio frame id for torso orientation task (angular only).
-    model : pin.Model
-        Pinocchio kinematic model.
-    data : Any
-        Pinocchio data buffer associated with `model`.
-    w_torso : float
-        Weight of torso angular task in the QP cost.
-    w_com : float
-        Weight of CoM task in the QP cost.
-    w_mf : float
-        Weight of moving-foot 6D task in the QP cost.
-    mu : float
-        Damping on joint velocities in the QP (Tikhonov term).
-    dt : float
-        Time step used by caller; not used here directly but kept for API symmetry.
-    locked_joints : list[int] | None
-        Optional list of joints or velocity indices to lock.
-        Each element can be:
-          - a Pinocchio joint id j in [0, model.njoints), which locks its velocity span
-          - or a direct velocity index v in [0, model.nv)
+    fixed_foot : str
+        Name of the stance foot site (hard equality).
+    swing_foot : str
+        Name of the swing foot site (soft task).
+    damping : float
+       Levenberg-Marquardt damping applied to all tasks. Higher values improve numerical stability but slow down task convergence. 
+       This value applies to all dofs, including floating-base coordinates.
+    dt: float 
+    Integration timestep in [s].
+    solver: str
+    Backend quadratic programming (QP) solver. (use daqp)
     """
+    fixed_foot : str = None
+    swing_foot : str = None
+    backpack : str = "imu_backpack"
+    damping : float = 1e-1
+    dt: float = 0.01
+    solver: str = "daqp"
 
-    fixed_foot_frame: int
-    moving_foot_frame: int
-    torso_frame: int
-    model: mujoco.MjModel
-    data: Any
-    w_torso: float
-    w_com: float
-    w_mf: float
-    mu: float
-    dt: float
-    locked_joints: typing.Optional[typing.List[int]] = None
-
-
-def _se3_task_error_and_jacobian(model, data, q, frame_id, M_des):
-    """
-    Compute 6D right-invariant pose error and task Jacobian for a frame.
-
-    Parameters
-    ----------
-    model : pin.Model
-        Pinocchio model.
-    data : pin.Data
-        Pinocchio data (assumed up to date for frame placements if needed).
-    q : ndarray, shape (nq,)
-        Configuration vector.
-    frame_id : int
-        Target frame id in `model`.
-    M_des : pin.SE3
-        Desired frame pose in world.
-
-    Returns
-    -------
-    e6 : ndarray, shape (6,)
-        Right-invariant pose residual in the LOCAL frame.
-        Order: angular (rx, ry, rz), linear (vx, vy, vz).
-    Jtask : ndarray, shape (6, nv)
-        Task Jacobian that maps generalized velocity `dq` to residual rate.
-
-    Notes
-    -----
-    Uses LOCAL frame convention and Pinocchio's `Jlog6` to map spatial velocity
-    to se(3) log-space.
-    """
-    # Pose of frame i in world; LOCAL frame convention (right differentiation)
-    oMi = data.oMf[frame_id]  # requires updateFramePlacements()
-    iMd = oMi.actInv(M_des)  # ^i M_d  = oMi^{-1} * oMdes
-    e6 = pin.log(iMd).vector  # right-invariant pose error in LOCAL frame
-
-    # Compute frame jacobian in local reference frame
-    Jb = pin.computeFrameJacobian(model, data, q, frame_id, pin.LOCAL)
-
-    # Right Jacobian of the log map (Pinocchio’s Jlog6)
-    Jl = pin.Jlog6(iMd)  # maps LOCAL spatial vel -> d(log) in se(3)
-
-    # Task Jacobian
-    Jtask = Jl @ Jb  # minus sign per right-invariant residual
-
-    return e6, Jtask
-
-
-def _joint_vel_span(j, model):
-    """
-    Return the velocity-index span for joint `j`.
-
-    Parameters
-    ----------
-    j : int
-        Pinocchio joint id.
-    model : pin.Model
-        Model containing `idx_v` mapping.
-
-    Returns
-    -------
-    range
-        Range of velocity indices covered by joint `j`.
-    """
-    i = model.idx_v[j]
-    nvj = (model.idx_v[j + 1] - i) if j + 1 < model.njoints else (model.nv - i)
-    return range(i, i + nvj)
-
-
-def solve_inverse_kinematics(
-    q,
-    com_target,
-    oMf_fixed_foot,
-    oMf_moving_foot,
-    oMf_torso,
-    params: InvKinSolverParams,
+def solve_inv_kinematics_mujoco(
+    configuration: mink.Configuration,
+    com_task: mink.ComTask,
+    stance_foot_task: mink.FrameTask,
+    swing_foot_task: mink.FrameTask,
+    backpack_orientation_task: mink.FrameTask,
+    com_target: np.ndarray,
+    stance_des_pos: np.ndarray,
+    swing_des_pos: np.ndarray,
+    backpack_angle: float,
+    params: InvKinSolverParamsMujoco,
 ):
-    """
-    One-step inverse kinematics via QP with a hard stance-foot constraint.
+    print("Setting up inverse kinematics problem...")
+    # Set targets
+    tasks = [com_task, stance_foot_task, swing_foot_task, backpack_orientation_task]
+    constraints = []
+    stance_foot_pose = configuration.get_transform_frame_to_world(params.fixed_foot, "site")
+    stance_foot_translation = stance_des_pos
+    stance_foot_rotation = SO3.from_x_radians(0) @ SO3.from_y_radians(np.deg2rad(0))   # no rotation
+    stance_foot_target = SE3.from_translation(stance_foot_translation) @ stance_foot_pose  # Translation in world frame.
+    stance_foot_target = stance_foot_target @ SE3.from_rotation(stance_foot_rotation)
+    stance_foot_task.set_target(stance_foot_target)
+    constraints.append(stance_foot_task)
 
-    Problem
-    -------
-    Minimize
-        w_com || J_com dq - e_com ||^2
-      + w_torso || J_torso dq - e_torso ||^2
-      + w_mf || J_mf dq - e_mf ||^2
-      + mu || dq ||^2
-    subject to
-        J_ff dq = e_ff        (fixed-foot 6D equality)
+    swing_foot_pose = configuration.get_transform_frame_to_world(params.swing_foot, "site")
+    swing_foot_translation = swing_des_pos
+    swing_foot_rotation = SO3.from_x_radians(0) @ SO3.from_y_radians(np.deg2rad(0))   # no rotation
+    swing_foot_target = SE3.from_translation(swing_foot_translation) @ swing_foot_pose  # Translation in world frame.
+    swing_foot_target = swing_foot_target @ SE3.from_rotation(swing_foot_rotation)
+    swing_foot_task.set_target(swing_foot_target)
 
-    Parameters
-    ----------
-    q : ndarray, shape (nq,)
-        Current configuration.
-    com_target : ndarray, shape (3,)
-        Desired CoM position in world.
-    oMf_fixed_foot : pin.SE3
-        Desired world pose of stance foot.
-    oMf_moving_foot : pin.SE3
-        Desired world pose of swing foot.
-    oMf_torso : pin.SE3
-        Desired world pose of torso (only angular part is used).
-    params : InvKinSolverParams
-        Weights, model/data, damping, and optional locked joints.
-
-    Returns
-    -------
-    q_next : ndarray, shape (nq,)
-        Integrated configuration `integrate(model, q, dq)`.
-    dq : ndarray, shape (nv,)
-        Generalized velocity solution (zeros for locked indices).
-
-    Notes
-    -----
-    - Builds a reduced QP on active velocity indices if `locked_joints` is set.
-    - CoM task uses Pinocchio `jacobianCenterOfMass`.
-    - Torso task selects angular rows via S = [0 I; 0 0].
-    - QP is solved with `qpsolvers.solve_qp(..., solver="osqp")`.
-    """
-    model, data = params.model, params.data
-
-    # ---------- Kinematics ----------
-    nv = model.nv
-
-    # ---------- Build locked velocity-index set ----------
-    locked_v_idx = set()
-    if params.locked_joints:
-        # Accept either Pinocchio joint IDs or direct velocity indices.
-        for j in params.locked_joints:
-            if 0 <= j < model.njoints:
-                i0 = model.idx_vs[j]
-                i1 = model.idx_vs[j + 1] if j + 1 < model.njoints else nv
-                locked_v_idx.update(range(i0, i1))
-            elif 0 <= j < nv:
-                locked_v_idx.add(j)
-            else:
-                raise ValueError(f"locked joint/index {j} out of range")
-    active_idx = np.array(sorted(set(range(nv)) - locked_v_idx), dtype=int)
-
-    def red(M):
-        return M[:, active_idx] if M is not None else None
-
-    # CoM
-    pin.computeCentroidalMap(model, data, q)
-    com = pin.centerOfMass(model, data, q)
-    Jcom = pin.jacobianCenterOfMass(model, data, q)
-    e_com = com_target - com
-
-    # Fixed foot
-    e_ff, J_ff = _se3_task_error_and_jacobian(
-        model, data, q, params.fixed_foot_frame, oMf_fixed_foot
+    com_task.set_target(com_target)
+    backpack_pose = configuration.get_transform_frame_to_world("imu_backpack", "site")
+    rotation_backpack = SO3.from_x_radians(0) @ SO3.from_y_radians(np.deg2rad(backpack_angle))   # Stay upright with slight forward tilt.
+    target_backpack = SE3.from_rotation(rotation_backpack)  
+    backpack_orientation_task.set_target(target_backpack)
+    print("Solving QP...")      
+    vel = mink.solve_ik(
+        configuration, tasks, params.dt, params.solver, damping=params.damping, constraints=constraints
     )
+    configuration.integrate_inplace(vel, params.dt)
 
-    # Moving foot
-    e_mf, J_mf = _se3_task_error_and_jacobian(
-        model, data, q, params.moving_foot_frame, oMf_moving_foot
-    )
 
-    # Torso (only angular part)
-    e_torso6, J_torso6 = _se3_task_error_and_jacobian(model, data, q, params.torso_frame, oMf_torso)
-    S = np.zeros((3, 6))
-    S[0, 3] = S[1, 4] = S[2, 5] = 1.0
-    e_torso = S @ e_torso6
-    J_torso = S @ J_torso6
+if __name__ == "__main__":
+    print("Running inverse kinematic mujoco script")
+    exo = Exo()
+    model = exo.mj_model
 
-    Jcom_r = red(Jcom)
-    J_ff_r = red(J_ff)
-    J_mf_r = red(J_mf)
-    J_torso_r = red(J_torso)
-    nav = active_idx.size
+    configuration = mink.Configuration(model)
 
-    Aeq = J_ff_r
-    beq = e_ff
+    tasks = [
+        backpack_orientation_task := mink.FrameTask(
+            frame_name="imu_backpack",
+            frame_type="site",
+            position_cost=0.0,
+            orientation_cost=1.0,
+            lm_damping=1.0,
+        ),
+        com_task := mink.ComTask(cost=10.0),
+        left_foot_task := mink.FrameTask(
+                frame_name="pos_L_foot",
+                frame_type="site",
+                position_cost=10.0,
+                orientation_cost=1.0,
+                lm_damping=1.0,
+            ),
+        right_foot_task := mink.FrameTask(
+                frame_name="pos_R_foot",
+                frame_type="site",
+                position_cost=10.0,
+                orientation_cost=1.0,
+                lm_damping=1.0,
+            )]
+    solver = "daqp"
+    dt = 0.01
+    model = configuration.model
+    data = configuration.data
+    mujoco.mj_forward(model, data)
+    params = InvKinSolverParamsMujoco(fixed_foot="pos_R_foot", swing_foot="pos_L_foot")
+    with mujoco.viewer.launch_passive(model, data) as viewer:
+        print("Viewer launched successfully.")
+        mujoco.mjv_defaultFreeCamera(model, viewer.cam)
+        print("Camera initialized.")
+        # backpack_pose = configuration.get_transform_frame_to_world("imu_backpack", "site")
+        # rotation_backpack = SO3.from_x_radians(0) @ SO3.from_y_radians(np.deg2rad(3))   # Stay upright with slight forward tilt.
+        # target_backpack = SE3.from_rotation(rotation_backpack)  
 
-    H = (
-        (Jcom_r.T @ (np.eye(3) * params.w_com) @ Jcom_r)
-        + (J_torso_r.T @ (np.eye(3) * params.w_torso) @ J_torso_r)
-        + (J_mf_r.T @ (np.eye(6) * params.w_mf) @ J_mf_r)
-        + np.eye(nav) * params.mu
-    )
-    g = (
-        (-Jcom_r.T @ (np.eye(3) * params.w_com) @ e_com)
-        + (-J_torso_r.T @ (np.eye(3) * params.w_torso) @ e_torso)
-        + (-J_mf_r.T @ (np.eye(6) * params.w_mf) @ e_mf)
-    )
+        # left_foot_pose = configuration.get_transform_frame_to_world("pos_L_foot", "site")
+        # left_foot_translation = np.array([0.2, 0, 0.1])
+        # left_foot_rotation = SO3.from_x_radians(0) @ SO3.from_y_radians(np.deg2rad(0))   # no rotation
+        # left_foot_target = SE3.from_translation(left_foot_translation) @ left_foot_pose  # Translation in world frame.
+        # left_foot_target = left_foot_target @ SE3.from_rotation(left_foot_rotation)
+        # swing_target = left_foot_target
 
-    H = 0.5 * (H + H.T)  # symmetrize
+        # right_foot_pose = configuration.get_transform_frame_to_world("pos_R_foot", "site")
+        # right_foot_translation = np.array([0.0, 0, 0.0])
+        # right_foot_rotation = SO3.from_x_radians(0) @ SO3.from_y_radians(np.deg2rad(0))   # no rotation
+        # right_foot_target = SE3.from_translation(right_foot_translation) @ right_foot_pose  # Translation in world frame.
+        # right_foot_target = right_foot_target @ SE3.from_rotation(right_foot_rotation)
+        # stance_target = right_foot_target
+        stance_des_pos = np.array([0.0, 0.0, 0.0])
+        swing_des_pos = np.array([0.2, 0.2, 0.1])
+        target_backpack = 3.0
+        backpack_body_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "backpack")
+        # Get the subtree COM for the backpack body (includes all child bodies)
+        current_com = data.subtree_com[backpack_body_id].copy()
+        com_target = current_com + np.array([0.1, 0.0, 0.0])  # Move CoM by 10 cm from current position.
 
-    dq_r = solve_qp(P=H, q=g, A=Aeq, b=beq, solver="osqp")
-
-    dq = np.zeros(nv)
-    dq[active_idx] = dq_r
-
-    q_next = pin.integrate(model, q, dq)
-
-    return q_next, dq
+        while viewer.is_running():
+            start_time = time.time()
+            print("Solving inverse kinematics...")
+            solve_inv_kinematics_mujoco(
+                configuration=configuration,
+                com_task=com_task,
+                stance_foot_task=right_foot_task,
+                swing_foot_task=left_foot_task,
+                backpack_orientation_task=backpack_orientation_task,
+                com_target=com_target,
+                stance_des_pos=stance_des_pos,
+                swing_des_pos=swing_des_pos,
+                backpack_angle=target_backpack,
+                params=params,
+            )
+            mujoco.mj_forward(model, data)
+            elapsed = time.time() - start_time
+            if elapsed < model.opt.timestep:
+                time.sleep(model.opt.timestep - elapsed)
+            viewer.sync()
