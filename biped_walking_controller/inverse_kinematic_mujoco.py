@@ -139,19 +139,22 @@ if __name__ == "__main__":
         right_foot_site_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SITE, "pos_R_foot")
         left_foot_site_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SITE, "pos_L_foot")
         mujoco.mj_forward(model, data)
-        stance_des_pos = data.site_xpos[right_foot_site_id].copy() 
-        swing_des_pos = data.site_xpos[left_foot_site_id].copy() + [0.2, 0, 0.1]
+        stance_des_pos = data.site_xpos[right_foot_site_id].copy()
+        test_trajectory = np.linspace(0, 0.3, 100)
+        swing_init_pos = data.site_xpos[left_foot_site_id].copy()
         print(f"Initial stance foot position: {stance_des_pos}") 
         target_backpack = 0.0
         backpack_body_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "backpack")
         # Get the subtree COM for the backpack body (includes all child bodies)
         current_com = data.subtree_com[backpack_body_id].copy()
         print(f"Current backpack COM: {current_com}")
-        com_target = current_com + np.array([0.0, 0.0, 0.0])  # Move CoM by 10 cm from current position.
-
+        com_target = current_com + np.array([0.3, 0.0, 0.0])  # Move CoM by 10 cm from current position.
+        counter = 0
         while viewer.is_running():
             start_time = time.time()
             # print("Solving inverse kinematics...")
+            if counter < len(test_trajectory):
+                swing_des_pos = swing_init_pos + np.array([test_trajectory[counter], 0.0, 0.0])
             qpos = solve_inv_kinematics_mujoco(
                 configuration=configuration,
                 com_task=com_task,
@@ -170,3 +173,4 @@ if __name__ == "__main__":
             if elapsed < model.opt.timestep:
                 time.sleep(model.opt.timestep - elapsed)
             viewer.sync()
+            counter += 1
