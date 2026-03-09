@@ -54,23 +54,17 @@ def solve_inv_kinematics_mujoco(
     backpack_angle: float,
     params: InvKinSolverParamsMujoco,
 ):
-    print("Setting up inverse kinematics problem...")
+    # print("Setting up inverse kinematics problem...")
     # Set targets
     tasks = [com_task, stance_foot_task, swing_foot_task, backpack_orientation_task]
     constraints = []
-    stance_foot_pose = configuration.get_transform_frame_to_world(params.fixed_foot, "site")
-    stance_foot_translation = stance_des_pos
     stance_foot_rotation = SO3.from_x_radians(0) @ SO3.from_y_radians(np.deg2rad(0))   # no rotation
-    stance_foot_target = SE3.from_translation(stance_foot_translation) @ stance_foot_pose  # Translation in world frame.
-    stance_foot_target = stance_foot_target @ SE3.from_rotation(stance_foot_rotation)
+    stance_foot_target = SE3.from_translation(stance_des_pos) @ SE3.from_rotation(stance_foot_rotation)
     stance_foot_task.set_target(stance_foot_target)
     constraints.append(stance_foot_task)
 
-    swing_foot_pose = configuration.get_transform_frame_to_world(params.swing_foot, "site")
-    swing_foot_translation = swing_des_pos
     swing_foot_rotation = SO3.from_x_radians(0) @ SO3.from_y_radians(np.deg2rad(0))   # no rotation
-    swing_foot_target = SE3.from_translation(swing_foot_translation) @ swing_foot_pose  # Translation in world frame.
-    swing_foot_target = swing_foot_target @ SE3.from_rotation(swing_foot_rotation)
+    swing_foot_target = SE3.from_translation(swing_des_pos) @ SE3.from_rotation(swing_foot_rotation)
     swing_foot_task.set_target(swing_foot_target)
 
     com_task.set_target(com_target)
@@ -78,11 +72,11 @@ def solve_inv_kinematics_mujoco(
     rotation_backpack = SO3.from_x_radians(0) @ SO3.from_y_radians(np.deg2rad(backpack_angle))   # Stay upright with slight forward tilt.
     target_backpack = SE3.from_rotation(rotation_backpack)  
     backpack_orientation_task.set_target(target_backpack)
-    print("Solving QP...")      
+    # print("Solving QP...")      
     vel = mink.solve_ik(
         configuration, tasks, params.dt, params.solver, damping=params.damping, constraints=constraints
     )
-    configuration.integrate_inplace(vel, params.dt)
+    return configuration.integrate(vel, params.dt)
 
 
 if __name__ == "__main__":
@@ -142,18 +136,23 @@ if __name__ == "__main__":
         # right_foot_target = SE3.from_translation(right_foot_translation) @ right_foot_pose  # Translation in world frame.
         # right_foot_target = right_foot_target @ SE3.from_rotation(right_foot_rotation)
         # stance_target = right_foot_target
-        stance_des_pos = np.array([0.0, 0.0, 0.0])
-        swing_des_pos = np.array([0.2, 0.2, 0.1])
-        target_backpack = 3.0
+        right_foot_site_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SITE, "pos_R_foot")
+        left_foot_site_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SITE, "pos_L_foot")
+        mujoco.mj_forward(model, data)
+        stance_des_pos = data.site_xpos[right_foot_site_id].copy() 
+        swing_des_pos = data.site_xpos[left_foot_site_id].copy() + [0.2, 0, 0.1]
+        print(f"Initial stance foot position: {stance_des_pos}") 
+        target_backpack = 0.0
         backpack_body_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "backpack")
         # Get the subtree COM for the backpack body (includes all child bodies)
         current_com = data.subtree_com[backpack_body_id].copy()
-        com_target = current_com + np.array([0.1, 0.0, 0.0])  # Move CoM by 10 cm from current position.
+        print(f"Current backpack COM: {current_com}")
+        com_target = current_com + np.array([0.0, 0.0, 0.0])  # Move CoM by 10 cm from current position.
 
         while viewer.is_running():
             start_time = time.time()
-            print("Solving inverse kinematics...")
-            solve_inv_kinematics_mujoco(
+            # print("Solving inverse kinematics...")
+            qpos = solve_inv_kinematics_mujoco(
                 configuration=configuration,
                 com_task=com_task,
                 stance_foot_task=right_foot_task,
@@ -165,6 +164,7 @@ if __name__ == "__main__":
                 backpack_angle=target_backpack,
                 params=params,
             )
+            data.qpos[:] = qpos
             mujoco.mj_forward(model, data)
             elapsed = time.time() - start_time
             if elapsed < model.opt.timestep:
