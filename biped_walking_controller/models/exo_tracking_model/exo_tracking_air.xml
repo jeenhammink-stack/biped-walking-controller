@@ -4,7 +4,8 @@
             <compiler meshdir="obj-files" angle="degree" autolimits="true"/>
             <size nuser_actuator='1' nuser_sensor='8' nuser_geom='1'/>
             <option timestep="0.01" iterations="10" ls_iterations="20" gravity='0 0 -9.81'>
-                <flag multiccd="disable"/>
+                <!-- <flag multiccd="disable"/> -->
+                <flag eulerdamp="disable" />
             </option>
 
             <visual>
@@ -177,16 +178,16 @@
               <gyro name="vel_R_foot_imu" site="R_foot_imu" noise="0" cutoff="34.9"/>
               <accelerometer name="acc_R_foot_imu" site="R_foot_imu" noise="0" cutoff="157"/> -->
   </sensor>
-            <keyframe><key name='home' qpos='-0.18 0 1.034 0.9990482 0.0 0.0436194 0 -0.0538850788003355 -0.163444867517726 0.3114220463634088 -0.20627090627386732 0.0538736103022484 0.0538904247681917 -0.1634221502873682 0.3113776463689615 -0.20627090627386732 -0.0538794144550795'/></keyframe><worldbody><geom name='floor' size='0 0 .05' type='plane' material='grid' pos='0 0 0' conaffinity='15' condim='6' solref='0.000002 1' solimp='0.99 0.999 0.000001' friction='3 0.005 0.0001'/><light name='spotlight' mode='targetbodycom' target='backpack' diffuse='.8 .8 .8' specular='0.3 0.3 0.3' pos='0 -20 4' cutoff='10'/>
-            <!-- <keyframe><key name='home' qpos='-0.0538850788003355 -0.163444867517726 0.3114220463634088 -0.20627090627386732 0.0538736103022484 0.0538904247681917 -0.1634221502873682 0.3113776463689615 -0.20627090627386732 -0.0538794144550795'/></keyframe><worldbody><geom name='floor' size='0 0 .05' type='plane' material='grid' pos='0 0 0' conaffinity='15' condim='6' solref='0.000002 1' solimp='0.99 0.999 0.000001' friction='3 0.005 0.0001'/><light name='spotlight' mode='targetbodycom' target='backpack' diffuse='.8 .8 .8' specular='0.3 0.3 0.3' pos='0 -20 4' cutoff='10'/> -->
+            <!-- <keyframe><key name='home' qpos='-0.18 0 1.034 0.9990482 0.0 0.0436194 0 -0.0538850788003355 -0.163444867517726 0.3114220463634088 -0.20627090627386732 0.0538736103022484 0.0538904247681917 -0.1634221502873682 0.3113776463689615 -0.20627090627386732 -0.0538794144550795'/></keyframe><worldbody><geom name='floor' size='0 0 .05' type='plane' material='grid' pos='0 0 0' conaffinity='15' condim='6' solref='0.000002 1' solimp='0.99 0.999 0.000001' friction='3 0.005 0.0001'/><light name='spotlight' mode='targetbodycom' target='backpack' diffuse='.8 .8 .8' specular='0.3 0.3 0.3' pos='0 -20 4' cutoff='10'/> -->
+            <keyframe><key name='home' qpos='-0.0538850788003355 -0.163444867517726 0.3114220463634088 -0.20627090627386732 0.0538736103022484 0.0538904247681917 -0.1634221502873682 0.3113776463689615 -0.20627090627386732 -0.0538794144550795'/></keyframe><worldbody><geom name='floor' size='0 0 .05' type='plane' material='grid' pos='0 0 0' conaffinity='15' condim='6' solref='0.000002 1' solimp='0.99 0.999 0.000001' friction='3 0.005 0.0001'/><light name='spotlight' mode='targetbodycom' target='backpack' diffuse='.8 .8 .8' specular='0.3 0.3 0.3' pos='0 -20 4' cutoff='10'/>
 
               <!-- <keyframe><key name='home' qpos='-0.0463558032077022 0.24486128453598172 0.5676614531497716 0.280997956767429 -0.0463558032077022 0.0420078979603756 0.3590018018427899 0.1958563777959386 -0.020976551438732657 -0.1347195043757801'/></keyframe><worldbody><geom name='floor' size='0 0 .05' type='plane' material='grid' pos='0 0 0' conaffinity='15' condim='6' solref='0.000002 1' solimp='0.99 0.999 0.000001' friction='3 0.005 0.0001'/><light name='spotlight' mode='targetbodycom' target='backpack' diffuse='.8 .8 .8' specular='0.3 0.3 0.3' pos='0 -20 4' cutoff='10'/> -->
             <!-- 0, 0, 1.03, 0.9990482, 0, 0.0436194, 0 0.0538850788003355, 0.163444867517726, 0.3114220463634088, 0.1834168026738673, 0.0538736103022484, 0.0538904247681917, 0.1634221502873682, 0.3113776463689615, 0.1833954904567925, 0.0538794144550795] -->
 
-            <body name="safety_catcher" pos="-0.4 0.0 1.05">
+            <body name="safety_catcher" pos="-0.4 0.0 1.25">
             <inertial pos="0 0 0" mass="0.1" diaginertia="10 10 10"/>
             
-            <joint name='safety_catch_free' type='free'/>
+            <!-- <joint name='safety_catch_free' type='free'/> -->
             <!-- <joint name='safety_catch_z' type='slide' axis='0 0 1' range="-2 2" limited="true"/> -->
             <!-- <keyframe><key name='home' qpos='0 0 1.03 0.9990482 0 0.0436194 0 -0.0754 0.157 0.316 0.182 -0.0754 -0.0754 0.157 0.316 0.182 -0.0754'/></keyframe><worldbody><geom name='floor' size='0 0 .05' type='plane' material='grid' pos='0 0 0' conaffinity='15' condim='6' solref='0.000002 1' solimp='0.99 0.999 0.000001' friction='3 0.005 0.0001'/><light name='spotlight' mode='targetbodycom' target='backpack' diffuse='.8 .8 .8' specular='0.3 0.3 0.3' pos='0 -20 4' cutoff='10'/> -->
             <!-- <keyframe><key name='home' qpos='-0.0463558032077022 0.24486128453598172 0.5676614531497716 0.280997956767429 -0.0463558032077022 0.0420078979603756 0.3590018018427899 0.1958563777959386 -0.020976551438732657 -0.1347195043757801'/></keyframe><worldbody><geom name='floor' size='0 0 .05' type='plane' material='grid' pos='0 0 0' conaffinity='15' condim='6' solref='0.000002 1' solimp='0.99 0.999 0.000001' friction='3 0.005 0.0001'/><light name='spotlight' mode='targetbodycom' target='backpack' diffuse='.8 .8 .8' specular='0.3 0.3 0.3' pos='0 -20 4' cutoff='10'/> -->

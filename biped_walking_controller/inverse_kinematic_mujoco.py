@@ -62,7 +62,7 @@ def solve_inv_kinematics_mujoco(
     stance_foot_rotation = SO3.from_x_radians(0) @ SO3.from_y_radians(np.deg2rad(0))   # no rotation
     stance_foot_target = SE3.from_translation(stance_des_pos) @ SE3.from_rotation(stance_foot_rotation)
     stance_foot_task.set_target(stance_foot_target)
-    # constraints.append(stance_foot_task)
+    constraints.append(stance_foot_task)
 
     swing_foot_rotation = SO3.from_x_radians(0) @ SO3.from_y_radians(np.deg2rad(0))   # no rotation
     swing_foot_target = SE3.from_translation(swing_des_pos) @ SE3.from_rotation(swing_foot_rotation)
@@ -77,14 +77,13 @@ def solve_inv_kinematics_mujoco(
     vel = mink.solve_ik(
         configuration, tasks, params.dt, params.solver, damping=params.damping, constraints=constraints
     )
-    print("Ik solved")
     return configuration.integrate(vel, params.dt)
 
 
 if __name__ == "__main__":
     print("Running inverse kinematic mujoco script")
     exo = Exo()
-    model = exo.mj_model
+    model = exo.mj_model_air
     q_init = model.keyframe("home").qpos.copy()
     configuration = mink.Configuration(model, q_init)
 
@@ -142,7 +141,7 @@ if __name__ == "__main__":
         left_foot_site_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SITE, "pos_L_foot")
         mujoco.mj_forward(model, data)
         stance_des_pos = data.site_xpos[right_foot_site_id].copy()
-        test_trajectory = np.linspace(0, 2, 1000)
+        test_trajectory = np.linspace(0, 2, 500)
         swing_init_pos = data.site_xpos[left_foot_site_id].copy()
         print(f"Initial stance foot position: {stance_des_pos}") 
         target_backpack = 0.0
@@ -156,9 +155,11 @@ if __name__ == "__main__":
         configuration.update(data.qpos)  # Sync configuration with initial pose
         buffer_length = 100
         i = 0
-
-        com_pos = np.zeros((1000,3))
-        com_ref = np.zeros((1000,3))
+        sin = 0.2*np.array([np.sin(2 * np.pi * 0.5 * t) for t in test_trajectory])-0.15  # 0.5 Hz sine wave for foot trajectory
+        com_pos = np.zeros((500,3))
+        com_ref = np.zeros((500,3))
+        fe_pos = np.zeros(500)
+        fe_ref = np.zeros(500)
         while viewer.is_running():
             while i < buffer_length:
                 start_time = time.time()
@@ -170,26 +171,28 @@ if __name__ == "__main__":
                 i += 1
             start_time = time.time()
             # print("Solving inverse kinematics...")
-            if counter < len(test_trajectory):
+            if counter < len(test_trajectory)-1:
                 # swing_des_pos = swing_init_pos + np.array([0, 0.0, test_trajectory[counter]/2])  # Move swing foot forward and slightly up.
                 com_target = current_com + np.array([test_trajectory[counter], test_trajectory[counter]/2, 0])
                 com_ref[counter] = com_target
                 com_pos[counter] = data.subtree_com[backpack_body_id].copy() 
-            q_des = solve_inv_kinematics_mujoco(
-                configuration=configuration,
-                com_task=com_task,
-                stance_foot_task=right_foot_task,
-                swing_foot_task=left_foot_task,
-                backpack_orientation_task=backpack_orientation_task,
-                com_target=com_target,
-                stance_des_pos=stance_des_pos,
-                swing_des_pos=swing_init_pos,
-                backpack_angle=target_backpack,
-                params=params,
-            )
-            data.qpos[:] = q_des
-            # data.ctrl[:] = q_des[7:]
-            mujoco.mj_forward(model, data)
+            # q_des = solve_inv_kinematics_mujoco(
+            #     configuration=configuration,
+            #     com_task=com_task,
+            #     stance_foot_task=right_foot_task,
+            #     swing_foot_task=left_foot_task,
+            #     backpack_orientation_task=backpack_orientation_task,
+            #     com_target=com_target,
+            #     stance_des_pos=stance_des_pos,
+            #     swing_des_pos=swing_init_pos,
+            #     backpack_angle=target_backpack,
+            #     params=params,
+            # )
+            # data.qpos[:] = q_des
+                data.ctrl[1] = sin[counter]  # Oscillate the FE joint of the left leg to visualize motion.
+                fe_ref[counter] = sin[counter]
+                fe_pos[counter] = data.qpos[1]
+            mujoco.mj_step(model, data)
             # mujoco.mj_forward(model, data)  # Update all dependent quantities after changing qpos
             elapsed = time.time() - start_time
             if elapsed < model.opt.timestep:
@@ -197,11 +200,7 @@ if __name__ == "__main__":
             viewer.sync()
             counter += 1
             print(f"End of iteration {counter}")
-        plt.plot(test_trajectory, com_ref[:counter, 0], label="CoM Reference-x", linestyle="--")
-        plt.plot(test_trajectory, com_pos[:counter, 0], label="CoM Actual-x (MuJoCo)", linestyle="-")
-        plt.plot(test_trajectory, com_ref[:counter, 1], label="CoM Reference-y", linestyle="--")
-        plt.plot(test_trajectory, com_pos[:counter, 1], label="CoM Actual-y (MuJoCo)", linestyle="-") 
-        plt.plot(test_trajectory, com_ref[:counter, 2], label="CoM Reference-z", linestyle="--")
-        plt.plot(test_trajectory, com_pos[:counter, 2], label="CoM Actual-z (MuJoCo)", linestyle="-")
+        plt.plot(fe_ref, label="FE joint reference")
+        plt.plot(fe_pos, label="FE joint actual")
         plt.legend()
         plt.show()

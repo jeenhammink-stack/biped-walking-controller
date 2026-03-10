@@ -34,15 +34,7 @@ from biped_walking_controller.preview_control import (
     cubic_spline_interpolation,
 )
 
-from biped_walking_controller.model import Talos, q_from_base_and_joints
 
-from biped_walking_controller.simulation import (
-    _snap_feet_to_plane,
-    _compute_base_from_foot_target,
-    Simulator,
-)
-
-from biped_walking_controller.zmp_calc import calculate_zmp
 
 
 @dataclass
@@ -79,13 +71,14 @@ def get_accurate_sim_params() -> typing.Tuple[GeneralParams, PreviewControllerPa
 
     # Specific params
     general_params.dt = 1.0 / 100.0  # MuJoCo default timestep
-    general_params.t_ss = 0.6
+    general_params.t_ss = 0.8 # Longer ss phase
     general_params.t_ds = 0.1
-    general_params.n_steps = 15
+    general_params.n_steps = 5
     general_params.l_stride = 0.15
-    general_params.max_height_foot = 0.05
+    general_params.max_height_foot = 0.025 # Lower foot height
     general_params.n_solver_iter = 1500
 
+    ctrler_params.n_preview_steps = int(round(general_params.t_preview / general_params.dt))
     return general_params, ctrler_params
 
 
@@ -96,9 +89,11 @@ def main():
     configuration = mink.Configuration(model)
     data = configuration.data
     data.qpos[:] = model.keyframe("home").qpos.copy()
-    mujoco.mj_forward(model, data)
 
-  # Just initialize the viewer and camera for now.
+    data.ctrl[:] = model.keyframe("home").qpos[7:].copy()  # Set initial control inputs to match the home pose
+    mujoco.mj_step(model, data)
+
+
     ##############
     # MINK setup #
     ##############
@@ -114,26 +109,27 @@ def main():
             orientation_cost=1.0,
             lm_damping=1.0,
         ),
-        com_task := mink.ComTask(cost=[20,20,5.0]),
+        com_task := mink.ComTask(cost=[10,10,10]),
         left_foot_task := mink.FrameTask(
                 frame_name=left_foot_name,
                 frame_type="site",
-                position_cost=10.0,
+                position_cost=30.0,
                 orientation_cost=1.0,
                 lm_damping=1.0,
             ),
         right_foot_task := mink.FrameTask(
                 frame_name=right_foot_name,
                 frame_type="site",
-                position_cost=10.0,
+                position_cost=30.0,
                 orientation_cost=1.0,
                 lm_damping=1.0,
             ),
-        damping_task := mink.DampingTask(model=model, cost=0.5)
+        damping_task := mink.DampingTask(model=model, cost=2)
         ]
     ik_sol_params = InvKinSolverParamsMujoco(
         fixed_foot=left_foot_name,
-        swing_foot=right_foot_name
+        swing_foot=right_foot_name,
+        dt=0.01,
     )
 
     ##############
@@ -143,20 +139,25 @@ def main():
     left_foot_site_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SITE, "pos_L_foot")
     backpack_site_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SITE, "imu_backpack")
     # Get site position (3D world coordinates)
-    right_foot_target = data.site_xpos[right_foot_site_id].copy()
-    print(f"Initial right foot target: {right_foot_target}")
-    # rf_target[2] = 0.0  # Ensure initial foot height is zero for the LIPM.
-    left_foot_target = data.site_xpos[left_foot_site_id].copy()
+    for i in range(10):
+        mujoco.mj_step(model, data)
+        right_foot_target = data.site_xpos[right_foot_site_id].copy()
+        print(f"Initial right foot target: {right_foot_target}")
+        # rf_target[2] = 0.0  # Ensure initial foot height is zero for the LIPM.
+        left_foot_target = data.site_xpos[left_foot_site_id].copy()
     print(f"Initial left foot target: {left_foot_target}")
     # lf_target[2] = 0.0  # Ensure initial foot height is zero for the LIPM.
     backpack_site_pos = data.site_xpos[backpack_site_id].copy()
     backpack_angle = 3.0  # degrees
 
     feet_mid = 0.5 * (right_foot_target + left_foot_target)
-    # com_initial_target = np.array([feet_mid[0], feet_mid[1], ctrler_params.zc])  # Initial CoM target above the midpoint of the feet.
+    des_height = 0.59
+    com_initial_target = np.array([feet_mid[0]+0.05, feet_mid[1], des_height])  # Initial CoM target above the midpoint of the feet.
     backpack_body_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "backpack")
     # Get the subtree COM for the backpack body (includes all child bodies)
-    com_initial_target = data.subtree_com[backpack_body_id].copy()
+
+    com_initial = data.subtree_com[backpack_body_id].copy()
+    print(f"Initial CoM position from MuJoCo: {com_initial}, Initial backpack position: {backpack_site_pos}")
     # com_initial_target[2] = ctrler_params.zc + 0.05 # Set initial CoM height to desired value for the LIPM.
     ctrler_mat = compute_preview_control_matrices(ctrler_params, scen_params.dt)
 
@@ -217,6 +218,9 @@ def main():
     rf_forces = np.zeros((len(phases), 1))
     lf_forces = np.zeros((len(phases), 1))
 
+    qpos_des = np.zeros((len(phases), model.nq))
+    qpos_act = np.zeros((len(phases), model.nq))
+
     with mujoco.viewer.launch_passive(model, data) as viewer:
         print("Viewer launched successfully.")
         mujoco.mjv_defaultFreeCamera(model, viewer.cam)
@@ -231,9 +235,8 @@ def main():
 
             # zmp_pos[k] = calculate_zmp(model, data) (optional for plotting purposes)
             # com_target = np.array([x_k[1], y_k[1], ctrler_params.zc])
-            com_target = np.array([x_k[1], y_k[1], com_initial_target[2]])  # Keep the initial CoM height constant for the LIPM.
+            com_target = np.array([x_k[1], y_k[1], des_height])  # Keep the initial CoM height constant for the LIPM.
 
-            print(f"com target: {com_target}, {com_initial_target}" )
             if phases[k] < 0.0:
                 # Set right foot as stance and left foot as swing
                 ik_sol_params.fixed_foot_frame = right_foot_name
@@ -255,7 +258,6 @@ def main():
                 
                 if phases[k + 1] > 0.0:
                 # Update the stance target so that u dont use the value of one gait cycle before
-                    print(f"Setting new left target")
                     left_foot_target = left_foot_path[k + 1].copy()
             else:
                 ik_sol_params.fixed_foot_frame = left_foot_name
@@ -277,14 +279,23 @@ def main():
 
                 if phases[k + 1] < 0.0:
                     right_foot_target = right_foot_path[k + 1].copy()
-
+            qpos_des[k] = q_des.copy()
+            qpos_act[k] = data.qpos.copy()
+            # data.ctrl[:] = q_des[7:]
+            # mujoco.mj_step(model, data)
+            data.qpos[:] = q_des
+            mujoco.mj_forward(model, data)  # Update the model state after setting qpos directly
+            # mj_step computes forward dynamics (including kinematics) then
+            # integrates qpos/qvel. After integration, derived quantities
+            # (site_xpos, subtree_com, Jacobians) are stale — they reflect the
+            # pre-integration state. Refresh them for the next IK solve.
+            # configuration.update()
 
             elapsed = time.time() - start_time
+
             if elapsed < model.opt.timestep:
                 time.sleep(model.opt.timestep - elapsed)
-            data.qpos[:] = q_des
-            mujoco.mj_forward(model, data)
-            viewer.sync()
+
 
             backpack_body_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "backpack")
             current_com = data.subtree_com[backpack_body_id].copy()
@@ -301,8 +312,10 @@ def main():
             # rf_pin_pos[k] = talos.data.oMf[talos.right_foot_id].translation
             rf_pb_pos[k] = data.site_xpos[right_foot_site_id]
 
+            viewer.sync()
+
         plt.figure(figsize=(12, 8))
-        plt.subplot(2, 1, 1)
+        plt.subplot(3, 1, 1)
         plt.plot(com_ref_pos[:, 0],label="CoM Reference-x", linestyle="--")
         plt.plot(com_pb_pos[:, 0] ,label="CoM Actual-x (MuJoCo)", linestyle="-")
         plt.plot(com_ref_pos[:, 1],label="CoM Reference-y", linestyle="--")
@@ -311,11 +324,18 @@ def main():
         plt.plot(com_pb_pos[:, 2] ,label="CoM Actual-z (MuJoCo)", linestyle="-")
         plt.legend()
         
-        plt.subplot(2, 1, 2)
-        plt.plot(rf_ref_pos[:, 2], label="Right Foot Reference", linestyle="--")
-        plt.plot(rf_pb_pos[:, 2], label="Right Foot Actual (MuJoCo)", linestyle="-")
+        plt.subplot(3, 1, 2)
+        plt.plot(lf_ref_pos[:, 2], label="Left Foot Reference", linestyle="--")
+        plt.plot(lf_pb_pos[:, 2], label="Left Foot Actual (MuJoCo)", linestyle="-")
+        plt.legend()
+
+        plt.subplot(3, 1, 3)
+        plt.plot(qpos_des[:, 8]- qpos_act[:, 8], label="FE error", linestyle="--")
+        plt.plot(qpos_des[:, 9]- qpos_act[:, 9], label="KNEE error", linestyle="--")
         plt.legend()
         plt.show()
+
+
 
 if __name__ == "__main__":
     main()

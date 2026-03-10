@@ -40,8 +40,10 @@ class Exo:
         #     path_to_urdf, str(path_to_model), pin.JointModelFreeFlyer()
         # )
         repo_dir = Path(__file__).resolve().parent
-        xml_path = str(repo_dir / "models" / "exo_tracking_model" / "exo_tracking_ground.xml")
-        self.mj_model = mujoco.MjModel.from_xml_path(xml_path)
+        xml_path_ground = str(repo_dir / "models" / "exo_tracking_model" / "exo_tracking_ground.xml")
+        xml_path_air = str(repo_dir / "models" / "exo_tracking_model" / "exo_tracking_air.xml")
+        self.mj_model = mujoco.MjModel.from_xml_path(xml_path_ground)
+        self.mj_model_air = mujoco.MjModel.from_xml_path(xml_path_air)
         # Position the arms
         # We lock joints of the upper body since there are not meant to move with LIPM model
         # set_joint(q, full_model, "leg_left_4_joint", 0.0)
