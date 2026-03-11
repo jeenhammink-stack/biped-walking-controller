@@ -70,12 +70,12 @@ def get_accurate_sim_params() -> typing.Tuple[GeneralParams, PreviewControllerPa
     general_params, ctrler_params = get_standard_params()
 
     # Specific params
-    general_params.dt = 1.0 / 100.0  # MuJoCo default timestep
+    general_params.dt = 1.0 / 200.0  # MuJoCo default timestep
     general_params.t_ss = 0.8 # Longer ss phase
     general_params.t_ds = 0.1
     general_params.n_steps = 5
     general_params.l_stride = 0.15
-    general_params.max_height_foot = 0.025 # Lower foot height
+    general_params.max_height_foot = 0.03 # Lower foot height
     general_params.n_solver_iter = 1500
 
     ctrler_params.n_preview_steps = int(round(general_params.t_preview / general_params.dt))
@@ -281,10 +281,10 @@ def main():
                     right_foot_target = right_foot_path[k + 1].copy()
             qpos_des[k] = q_des.copy()
             qpos_act[k] = data.qpos.copy()
-            # data.ctrl[:] = q_des[7:]
-            # mujoco.mj_step(model, data)
-            data.qpos[:] = q_des
-            mujoco.mj_forward(model, data)  # Update the model state after setting qpos directly
+            data.ctrl[:] = q_des[7:]
+            mujoco.mj_step(model, data)
+            # data.qpos[:] = q_des
+            # mujoco.mj_forward(model, data)  
             # mj_step computes forward dynamics (including kinematics) then
             # integrates qpos/qvel. After integration, derived quantities
             # (site_xpos, subtree_com, Jacobians) are stale — they reflect the
@@ -315,27 +315,43 @@ def main():
             viewer.sync()
 
         plt.figure(figsize=(12, 8))
-        plt.subplot(3, 1, 1)
+        plt.subplot(3, 3, 1)
         plt.plot(com_ref_pos[:, 0],label="CoM Reference-x", linestyle="--")
         plt.plot(com_pb_pos[:, 0] ,label="CoM Actual-x (MuJoCo)", linestyle="-")
-        plt.plot(com_ref_pos[:, 1],label="CoM Reference-y", linestyle="--")
-        plt.plot(com_pb_pos[:, 1] ,label="CoM Actual-y (MuJoCo)", linestyle="-") 
-        plt.plot(com_ref_pos[:, 2],label="CoM Reference-z", linestyle="--")
-        plt.plot(com_pb_pos[:, 2] ,label="CoM Actual-z (MuJoCo)", linestyle="-")
+
+
         plt.legend()
         
-        plt.subplot(3, 1, 2)
-        plt.plot(lf_ref_pos[:, 2], label="Left Foot Reference", linestyle="--")
+        plt.subplot(3, 3, 2)
+        plt.plot(com_ref_pos[:, 1],label="CoM Reference-y", linestyle="--")
+        plt.plot(com_pb_pos[:, 1] ,label="CoM Actual-y (MuJoCo)", linestyle="-") 
+        plt.legend()
+
+        plt.subplot(3, 3, 3)
+        plt.plot(com_ref_pos[:, 2],label="CoM Reference-z", linestyle="--")
+        plt.plot(com_pb_pos[:, 2] ,label="CoM Actual-z (MuJoCo)", linestyle="-")
+
+        plt.legend()
+
+        plt.subplot(3, 3, 4)
+        plt.plot(lf_ref_pos[:, 2], label="Left Foot Reference (z)", linestyle="--")
         plt.plot(lf_pb_pos[:, 2], label="Left Foot Actual (MuJoCo)", linestyle="-")
         plt.legend()
-
-        plt.subplot(3, 1, 3)
-        plt.plot(qpos_des[:, 8]- qpos_act[:, 8], label="FE error", linestyle="--")
-        plt.plot(qpos_des[:, 9]- qpos_act[:, 9], label="KNEE error", linestyle="--")
+        plt.subplot(3, 3, 5)
+        plt.plot(qpos_des[:, 8]- qpos_act[:, 8], label="L FE error", linestyle="--")
+        plt.legend()
+        plt.subplot(3, 3, 6)
+        plt.plot(qpos_des[:, 9]- qpos_act[:, 9], label="L KNEE error", linestyle="--")
+        plt.legend()
+        plt.subplot(3, 3, 7)
+        plt.plot(qpos_des[:, 7] - qpos_act[:, 7], label="L AA error", linestyle="--")
+        plt.legend()
+        plt.subplot(3, 3, 8)
+        plt.plot(qpos_des[:, 10] - qpos_act[:, 10], label="LADPF error", linestyle="--")
+        plt.legend()
+        plt.subplot(3, 3, 9)
+        plt.plot(qpos_des[:, 11] - qpos_act[:, 11], label="L IE error", linestyle="--")
         plt.legend()
         plt.show()
-
-
-
 if __name__ == "__main__":
     main()
