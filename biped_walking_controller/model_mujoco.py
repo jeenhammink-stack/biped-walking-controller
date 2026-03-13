@@ -40,10 +40,12 @@ class Exo:
         #     path_to_urdf, str(path_to_model), pin.JointModelFreeFlyer()
         # )
         repo_dir = Path(__file__).resolve().parent
-        xml_path_ground = str(repo_dir / "models" / "exo_tracking_model" / "exo_tracking_ground.xml")
+        xml_path__position = str(repo_dir / "models" / "exo_tracking_model" / "exo_tracking_position.xml")
+        xml_path_torque = str(repo_dir / "models" / "exo_tracking_model" / "exo_tracking_torque.xml")
         xml_path_air = str(repo_dir / "models" / "exo_tracking_model" / "exo_tracking_air.xml")
-        self.mj_model = mujoco.MjModel.from_xml_path(xml_path_ground)
+        self.mj_model_position = mujoco.MjModel.from_xml_path(xml_path__position)
         self.mj_model_air = mujoco.MjModel.from_xml_path(xml_path_air)
+        self.mj_model_torque = mujoco.MjModel.from_xml_path(xml_path_torque)
         # Position the arms
         # We lock joints of the upper body since there are not meant to move with LIPM model
         # set_joint(q, full_model, "leg_left_4_joint", 0.0)
@@ -64,7 +66,7 @@ class Exo:
         #     self.geom = full_col_model
         #     self.vis = full_vis_model
 
-        self.mj_data = mujoco.MjData(self.mj_model)
+        # self.mj_data = mujoco.MjData(self.mj_model)
 
         # upper_v_idx = {}
         # for j in self.model.joints:
@@ -76,9 +78,9 @@ class Exo:
         #     start = j.idx_v  # first velocity index for this joint
         #     upper_v_idx[name] = (start, j.idx_q)
 
-        self.left_foot_id = mujoco.mj_name2id(self.mj_model, mujoco.mjtObj.mjOBJ_SITE, "pos_L_foot")
-        self.right_foot_id = mujoco.mj_name2id(self.mj_model, mujoco.mjtObj.mjOBJ_SITE, "pos_R_foot")
-        self.backpack_id = mujoco.mj_name2id(self.mj_model, mujoco.mjtObj.mjOBJ_SITE, "imu_backpack")
+        # self.left_foot_id = mujoco.mj_name2id(self.mj_model, mujoco.mjtObj.mjOBJ_SITE, "pos_L_foot")
+        # self.right_foot_id = mujoco.mj_name2id(self.mj_model, mujoco.mjtObj.mjOBJ_SITE, "pos_R_foot")
+        # self.backpack_id = mujoco.mj_name2id(self.mj_model, mujoco.mjtObj.mjOBJ_SITE, "imu_backpack")
 
     def set_and_get_default_pose(self):
         # Initialize reduced model
@@ -132,5 +134,3 @@ class Exo:
     @staticmethod
     def get_lf_link_name():
         return "leg_left_6_link"
-
-ExoModel = Exo()

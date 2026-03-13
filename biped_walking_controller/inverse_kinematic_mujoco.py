@@ -15,7 +15,7 @@ from mink import SE3, SO3
 from biped_walking_controller.model_mujoco import Exo
 
 import matplotlib.pyplot as plt
-
+from biped_walking_controller.controller_position import low_level_update
 @dataclass
 class InvKinSolverParamsMujoco:
     """
@@ -51,7 +51,9 @@ def solve_inv_kinematics_mujoco(
     damping_task: mink.DampingTask,
     com_target: np.ndarray,
     stance_des_pos: np.ndarray,
+    stance_des_quat: np.ndarray,
     swing_des_pos: np.ndarray,
+    swing_des_quat: np.ndarray,
     backpack_angle: float,
     params: InvKinSolverParamsMujoco,
 ):
@@ -59,12 +61,12 @@ def solve_inv_kinematics_mujoco(
     tasks = [com_task, stance_foot_task, swing_foot_task, backpack_orientation_task, damping_task]
     constraints = []
     # Set targets
-    stance_foot_rotation = SO3.from_x_radians(0) @ SO3.from_y_radians(np.deg2rad(0))   # no rotation
+    stance_foot_rotation = SO3(wxyz=stance_des_quat)  # no rotation
     stance_foot_target = SE3.from_translation(stance_des_pos) @ SE3.from_rotation(stance_foot_rotation)
     stance_foot_task.set_target(stance_foot_target)
     constraints.append(stance_foot_task)
 
-    swing_foot_rotation = SO3.from_x_radians(0) @ SO3.from_y_radians(np.deg2rad(0))   # no rotation
+    swing_foot_rotation = SO3(wxyz=swing_des_quat)  # no rotation
     swing_foot_target = SE3.from_translation(swing_des_pos) @ SE3.from_rotation(swing_foot_rotation)
     swing_foot_task.set_target(swing_foot_target)
 
@@ -83,7 +85,7 @@ def solve_inv_kinematics_mujoco(
 if __name__ == "__main__":
     print("Running inverse kinematic mujoco script")
     exo = Exo()
-    model = exo.mj_model_air
+    model = exo.mj_model_air_torque
     q_init = model.keyframe("home").qpos.copy()
     configuration = mink.Configuration(model, q_init)
 
@@ -189,7 +191,7 @@ if __name__ == "__main__":
             #     params=params,
             # )
             # data.qpos[:] = q_des
-                data.ctrl[1] = sin[counter]  # Oscillate the FE joint of the left leg to visualize motion.
+                low_level_update(data, kp=120, kv=0.8, desired_pos=sin[counter])
                 fe_ref[counter] = sin[counter]
                 fe_pos[counter] = data.qpos[1]
             mujoco.mj_step(model, data)
