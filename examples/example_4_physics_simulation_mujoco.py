@@ -84,7 +84,21 @@ def main():
     args = p.parse_args()
 
     scen_params, ctrler_params = get_accurate_sim_params()
-    
+
+    # PD gains
+    joint_gains = {
+        "LEFT_ANKLE_DPF":  {"kp": 75,       "kd": 2.5},
+        "LEFT_ANKLE_IE":   {"kp": 60,       "kd": 0.8},
+        "LEFT_HIP_AA":     {"kp": 100,       "kd": 2.5},
+        "LEFT_HIP_FE":     {"kp": 100,       "kd": 0.8},
+        "LEFT_KNEE":       {"kp": 40,       "kd": 0.8},
+        "RIGHT_ANKLE_DPF": {"kp": 75,       "kd": 2.5},
+        "RIGHT_ANKLE_IE":  {"kp": 60,       "kd": 0.8},
+        "RIGHT_HIP_AA":    {"kp": 100,       "kd": 2.5},
+        "RIGHT_HIP_FE":    {"kp": 100,       "kd": 0.8},  # 120, 0, 0.8
+        "RIGHT_KNEE":      {"kp": 40,       "kd": 0.8},
+        
+    }
     # model = Exo().mj_model_torque
     model = Exo().mj_model_torque
     configuration = mink.Configuration(model)
@@ -142,28 +156,24 @@ def main():
     left_foot_body_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "L_foot")
 
     backpack_site_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SITE, "imu_backpack")
-    # Step sim couple of times to get accurate initial positions
 
-
+    # Get initial foot positions and offset base so that feet are at zero. 
     right_foot_pos_target = data.site_xpos[right_foot_site_id].copy()
-    print(f"Initial right foot position from MuJoCo: {right_foot_pos_target}")
     right_foot_quat_target = data.xquat[right_foot_body_id].copy()
-
     left_foot_pos_target = data.site_xpos[left_foot_site_id].copy()
-    print(f"Initial left foot position from MuJoCo: {left_foot_pos_target}")
     left_foot_quat_target = data.xquat[left_foot_body_id].copy()
     mujoco.mj_forward(model, data)  # Update all dependent quantities after changing qpos
-    print(f"Adjusted initial right foot position from MuJoCo: {data.xpos[right_foot_body_id]}, Adjusted initial left foot position from MuJoCo: {data.xpos[left_foot_body_id]}")
     backpack_site_pos = data.site_xpos[backpack_site_id].copy()
-    backpack_angle = 3.0  # degrees
 
+    # Targets
+    backpack_angle = 3.0  # degrees
     feet_mid = 0.5 * (right_foot_pos_target + left_foot_pos_target)
     des_height = 0.61 # m
     com_initial_target = np.array([feet_mid[0]+0.05, feet_mid[1], des_height])  # Initial CoM target above the midpoint of the feet.
     backpack_body_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "backpack")
-    # Get the subtree COM for the backpack body (includes all child bodies)
-    com_initial = data.subtree_com[backpack_body_id].copy()
-    print(f"Initial CoM position from MuJoCo: {com_initial}, Initial backpack position: {backpack_site_pos}")
+
+    # Compute trajectories
+
     ctrler_mat = compute_preview_control_matrices(ctrler_params, scen_params.dt)
 
     steps_pose, steps_ids = compute_steps_sequence(
@@ -186,7 +196,6 @@ def main():
         dt=scen_params.dt,
         traj_generator=BezierCurveFootPathGenerator(scen_params.max_height_foot),
     )
-    print(f"left_foot_path.shape: {left_foot_path.shape}, right_foot_path.shape: {right_foot_path.shape}, phases.shape: {phases.shape}")
     zmp_ref = compute_zmp_ref(
         t=t,
         com_initial_pose=com_initial_target[0:2],
@@ -205,6 +214,8 @@ def main():
     x_k = np.array([0.0, com_initial_target[0], 0.0, 0.0], dtype=float)
     y_k = np.array([0.0, com_initial_target[1], 0.0, 0.0], dtype=float)
 
+    # Data storage for plotting
+
     keyframes = np.zeros((len(phases), model.nq))
 
     com_ref_pos = np.zeros((len(phases), 3))
@@ -217,28 +228,8 @@ def main():
     rf_ref_pos = np.zeros((len(phases), 3))
     rf_muj_pos = np.zeros((len(phases), 3))
     
-
-
     qpos_des = np.zeros((len(phases), model.nq))
     qpos_act = np.zeros((len(phases), model.nq))
-
-    joint_gains = {
-        "LEFT_ANKLE_DPF":  {"kp": 75,       "kd": 2.5},
-        "LEFT_ANKLE_IE":   {"kp": 60,       "kd": 0.8},
-        "LEFT_HIP_AA":     {"kp": 100,       "kd": 2.5},
-        "LEFT_HIP_FE":     {"kp": 100,       "kd": 0.8},
-        "LEFT_KNEE":       {"kp": 40,       "kd": 0.8},
-        "RIGHT_ANKLE_DPF": {"kp": 75,       "kd": 2.5},
-        "RIGHT_ANKLE_IE":  {"kp": 60,       "kd": 0.8},
-        "RIGHT_HIP_AA":    {"kp": 100,       "kd": 2.5},
-        "RIGHT_HIP_FE":    {"kp": 100,       "kd": 0.8},  # 120, 0, 0.8
-        "RIGHT_KNEE":      {"kp": 40,       "kd": 0.8},
-        
-    }
-
-    data_copy = mujoco.MjData(model)
-    data_copy.qpos[:] = model.keyframe("home").qpos.copy()
-    mujoco.mj_forward(model, data_copy)  # Update all dependent quantities after changing qpos
 
     ##################
     # RUN SIMULATION #
@@ -248,7 +239,8 @@ def main():
     - The main loop iterates over the precomputed foot trajectories and phases.
     - At each iteration, it computes the desired CoM target based on the LIPM preview control.
     - It then solves the inverse kinematics to get the desired joint positions for the current time step.
-    - Timing is important here. Controls are applied for as long the timestep lasts """
+    - These desired joint positions are an input to the PD control loop, which calculates motor torques
+    - These motor torques are then inputs to the Mujoco actuators."""
 
     with mujoco.viewer.launch_passive(model, data) as viewer:
         print("Viewer launched successfully.")
@@ -268,7 +260,7 @@ def main():
                 # Set right foot as stance and left foot as swing
                 ik_sol_params.fixed_foot_frame = right_foot_name
                 ik_sol_params.moving_foot_frame = left_foot_name
-
+                # Calculate desired joint positions with the inverse kinematics solver
                 q_des = solve_inv_kinematics_mujoco(
                     configuration=configuration, 
                     com_task=com_task,
@@ -310,24 +302,15 @@ def main():
 
                 if phases[k + 1] < 0.0:
                     right_foot_pos_target = right_foot_path[k + 1].copy()
-            # data_copy.qpos[:] = q_des
-            # mujoco.mj_forward(model, data_copy)  # Update all dependent quantities after changing qpos
-            lf_ik_pos[k] = data_copy.site_xpos[left_foot_site_id]
-            keyframes[k] = q_des.copy()
-            qpos_des[k] = q_des.copy()
-            qpos_act[k] = data.qpos.copy()
-            low_level_update(model, data, joint_gains=joint_gains, desired_pos=q_des[7:])
-            # data.ctrl[:] = q_des[7:].copy()  # Open loop control to track the IK solution
 
+            # Apply low-level PD control to track the desired joint positions
+            low_level_update(model, data, joint_gains=joint_gains, desired_pos=q_des[7:])
+            # Integrate one step in the simulation
             mujoco.mj_step(model, data)
             # data.qpos[:] = q_des
             # mujoco.mj_forward(model, data)  
-            # mj_step computes forward dynamics (including kinematics) then
-            # integrates qpos/qvel. After integration, derived quantities
-            # (site_xpos, subtree_com, Jacobians) are stale — they reflect the
-            # pre-integration state. Refresh them for the next IK solve.
-            # configuration.update()
 
+            # Try to run in real time
             elapsed = time.time() - start_time
 
             if elapsed < scen_params.dt:
@@ -336,6 +319,9 @@ def main():
 
             backpack_body_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "backpack")
             current_com = data.subtree_com[backpack_body_id].copy()
+            keyframes[k] = q_des.copy()
+            qpos_des[k] = q_des.copy()
+            qpos_act[k] = data.qpos.copy()
             # Store position of CoM, left and right feet
             com_ref_pos[k] = com_target
             # com_pin_pos[k] = com_pin
@@ -369,8 +355,6 @@ def main():
         plt.subplot(4, 4, 1)
         plt.plot(com_ref_pos[:plotlenght, 0],label="CoM Reference-x", linestyle="--")
         plt.plot(com_muj_pos[:plotlenght, 0] ,label="CoM Actual-x (MuJoCo)", linestyle="-")
-
-
         plt.legend()
         
         plt.subplot(4, 4, 2)
