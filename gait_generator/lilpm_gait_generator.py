@@ -1,6 +1,8 @@
 import argparse
-from time import time
 import time
+import datetime
+
+
 import typing
 from dataclasses import dataclass
 from pathlib import Path
@@ -216,7 +218,8 @@ def main():
 
     # Data storage for plotting
 
-    keyframes = np.zeros((len(phases), model.nq))
+    key_cyclic = np.zeros((0, model.nq))
+    key_opening = np.zeros((0, model.nq))
 
     com_ref_pos = np.zeros((len(phases), 3))
     com_muj_pos = np.zeros((len(phases), 3))
@@ -230,6 +233,11 @@ def main():
     
     qpos_des = np.zeros((len(phases), model.nq))
     qpos_act = np.zeros((len(phases), model.nq))
+
+    # Flags for keyframes
+
+    is_openings_step = True
+    is_cyclic = 0
 
     ##################
     # RUN SIMULATION #
@@ -276,11 +284,18 @@ def main():
                     backpack_angle=backpack_angle,
                     params=ik_sol_params,
                 )
-                
+                if is_openings_step:
+                    key_opening = np.vstack([key_opening, q_des.copy()])
+                if is_cyclic == 3:
+                    key_cyclic = np.vstack([key_cyclic, q_des.copy()])
+
                 if phases[k + 1] > 0.0:
                 # Update the stance target so that u dont use the value of one gait cycle before
                     left_foot_pos_target = left_foot_path[k + 1].copy()
+                    is_openings_step = False
+                    is_cyclic += 1
             else:
+                print(is_cyclic)
                 ik_sol_params.fixed_foot_frame = left_foot_name
                 ik_sol_params.moving_foot_frame = right_foot_name
 
@@ -299,9 +314,13 @@ def main():
                     backpack_angle=backpack_angle,
                     params=ik_sol_params,
                 )
+                if is_cyclic == 2:
+                    print("First cyclic step completed, starting to record cyclic keyframes.")
+                    key_cyclic = np.vstack([key_cyclic, q_des.copy()])
 
                 if phases[k + 1] < 0.0:
                     right_foot_pos_target = right_foot_path[k + 1].copy()
+                    is_cyclic += 1
 
             # Apply low-level PD control to track the desired joint positions
             low_level_update(model, data, joint_gains=joint_gains, desired_pos=q_des[7:])
@@ -319,7 +338,6 @@ def main():
 
             backpack_body_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "backpack")
             current_com = data.subtree_com[backpack_body_id].copy()
-            keyframes[k] = q_des.copy()
             qpos_des[k] = q_des.copy()
             qpos_act[k] = data.qpos.copy()
             # Store position of CoM, left and right feet
@@ -339,16 +357,29 @@ def main():
 
         if args.make_keyframes:
             if isinstance(args.make_keyframes, str):
-                filename = Path(args.make_keyframes)
+                filename_cyclic = Path(args.make_keyframes)
             else:
-                filename = Path(__file__).parent / "stable_gait.xml"
-            with open (filename, "w") as f:
+                filename_cyclic = Path(__file__).parent / "keyframe_gaits" / f"cyclic_gait-{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.xml"
+                filename_opening = Path(__file__).parent / "keyframe_gaits" / f"opening_gait-{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.xml"
+            with open (filename_cyclic, "w") as f:
                 f.write("<mujoco>\n")
+                f.write(f"<!-- Gait paramaters: t_ss={scen_params.t_ss}, t_ds={scen_params.t_ds}, l_stride={scen_params.l_stride}, max_height_foot={scen_params.max_height_foot} -->\n")
+                f.write(f"<!-- IK solver weights: backpack orientation: {backpack_orientation_task.orientation_cost} feet position: {left_foot_task.position_cost} feet orientation: {left_foot_task.orientation_cost} damping: {damping_task.cost} com: {com_task.cost} -->\n")
+
                 f.write("  <keyframe>\n")
-                for i in range(keyframes.shape[0]):
-                    f.write(f"    <key name='spin_{i}' qpos='{float(keyframes[i, 0])} {float(keyframes[i, 1])} {float(keyframes[i, 2])} {float(keyframes[i, 3])} {float(keyframes[i, 4])} {float(keyframes[i, 5])} {float(keyframes[i, 6])} {float(keyframes[i, 7])} {float(keyframes[i, 8])} {float(keyframes[i, 9])} {float(keyframes[i, 10])} {float(keyframes[i, 11])} {float(keyframes[i, 12])} {float(keyframes[i, 13])} {float(keyframes[i, 14])} {float(keyframes[i, 15])} {float(keyframes[i, 16])}' />\n") 
+                for i in range(key_cyclic.shape[0]):
+                    f.write(f"    <key name='spin_{i}' qpos='{float(key_cyclic[i, 0])} {float(key_cyclic[i, 1])} {float(key_cyclic[i, 2])} {float(key_cyclic[i, 3])} {float(key_cyclic[i, 4])} {float(key_cyclic[i, 5])} {float(key_cyclic[i, 6])} {float(key_cyclic[i, 7])} {float(key_cyclic[i, 8])} {float(key_cyclic[i, 9])} {float(key_cyclic[i, 10])} {float(key_cyclic[i, 11])} {float(key_cyclic[i, 12])} {float(key_cyclic[i, 13])} {float(key_cyclic[i, 14])} {float(key_cyclic[i, 15])} {float(key_cyclic[i, 16])}' />\n") 
                 f.write("  </keyframe>\n</mujoco>\n")
-            print(f"Keyframes written to {filename}")
+            print(f"Cyclic keyframes written to {filename_cyclic}")
+            with open (filename_opening, "w") as f:
+                f.write("<mujoco>\n")
+                f.write(f"<!-- Gait paramaters: t_ss={scen_params.t_ss}, t_ds={scen_params.t_ds}, l_stride={scen_params.l_stride}, max_height_foot={scen_params.max_height_foot} -->\n")
+                f.write(f"<!-- IK solver weights: backpack orientation: {backpack_orientation_task.orientation_cost} feet position: {left_foot_task.position_cost} feet orientation: {left_foot_task.orientation_cost} damping: {damping_task.cost} com: {com_task.cost} -->\n")
+                f.write("  <keyframe>\n")
+                for i in range(key_opening.shape[0]):
+                    f.write(f"    <key name='spin_{i}' qpos='{float(key_opening[i, 0])} {float(key_opening[i, 1])} {float(key_opening[i, 2])} {float(key_opening[i, 3])} {float(key_opening[i, 4])} {float(key_opening[i, 5])} {float(key_opening[i, 6])} {float(key_opening[i, 7])} {float(key_opening[i, 8])} {float(key_opening[i, 9])} {float(key_opening[i, 10])} {float(key_opening[i, 11])} {float(key_opening[i, 12])} {float(key_opening[i, 13])} {float(key_opening[i, 14])} {float(key_opening[i, 15])} {float(key_opening[i, 16])}' />\n") 
+                f.write("  </keyframe>\n</mujoco>\n")
+            print(f"Opening keyframes written to {filename_opening}")
 
         plotlenght = 1540
         plt.figure(figsize=(40, 30))
