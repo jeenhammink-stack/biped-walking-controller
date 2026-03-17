@@ -1,4 +1,7 @@
 <mujoco model='exoskeleton'>
+ <!-- <include file="/home/jeenh/lipm-walking-controller/gait_generator/keyframe_gaits/opening_gait-2026-03-16_16-38-42.xml"/> -->
+ <!-- <include file="/home/jeenh/lipm-walking-controller/gait_generator/keyframe_gaits/cyclic_gait-2026-03-16_16-38-42.xml"/> -->
+ <include file="/home/jeenh/lipm-walking-controller/gait_generator/keyframe_gaits/cyclic_gait-2026-03-17_10-21-42.xml"/>
 <!-- Path will be resolved relative to workspace or through ROS2 package system -->
             <compiler meshdir="obj-files" angle="degree" autolimits="true"/>
             <size nuser_actuator='1' nuser_sensor='8' nuser_geom='1'/>

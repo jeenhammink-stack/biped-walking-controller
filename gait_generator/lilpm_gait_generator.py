@@ -1,6 +1,7 @@
 import argparse
 import time
 import datetime
+import sys
 
 
 import typing
@@ -81,8 +82,14 @@ def get_accurate_sim_params() -> typing.Tuple[GeneralParams, PreviewControllerPa
 
 
 def main():
-    p = argparse.ArgumentParser()
+    p = argparse.ArgumentParser(description="Run the LIPM preview control with inverse kinematics in MuJoCo. Optionally generate keyframes for the MuJoCo model.")
+    p.add_argument("--ik", action="store_true", help="Only use inverse kinematics, no control dynamics")
+    p.add_argument("--test", action="store_true", help="Use pd control to test if the gait can be executed without falling over")
     p.add_argument("--make-keyframes", nargs="?", const=True, default=False, metavar="PATH", help="Generate keyframes for the MuJoCo model. Optionally specify an output file path.")
+
+    if len(sys.argv) == 1:
+        p.print_help()
+        return
     args = p.parse_args()
 
     scen_params, ctrler_params = get_accurate_sim_params()
@@ -322,12 +329,14 @@ def main():
                     right_foot_pos_target = right_foot_path[k + 1].copy()
                     is_cyclic += 1
 
-            # Apply low-level PD control to track the desired joint positions
-            low_level_update(model, data, joint_gains=joint_gains, desired_pos=q_des[7:])
-            # Integrate one step in the simulation
-            mujoco.mj_step(model, data)
-            # data.qpos[:] = q_des
-            # mujoco.mj_forward(model, data)  
+            if args.test:
+                # Apply low-level PD control to track the desired joint positions
+                low_level_update(model, data, joint_gains=joint_gains, desired_pos=q_des[7:])
+                # Integrate one step in the simulation
+                mujoco.mj_step(model, data)
+            elif args.ik:
+                data.qpos[:] = q_des
+                mujoco.mj_forward(model, data)  
 
             # Try to run in real time
             elapsed = time.time() - start_time
@@ -335,26 +344,24 @@ def main():
             if elapsed < scen_params.dt:
                 time.sleep(scen_params.dt - elapsed)
 
-
             backpack_body_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "backpack")
             current_com = data.subtree_com[backpack_body_id].copy()
+
             qpos_des[k] = q_des.copy()
             qpos_act[k] = data.qpos.copy()
             # Store position of CoM, left and right feet
             com_ref_pos[k] = com_target
-            # com_pin_pos[k] = com_pin
             com_muj_pos[k] = current_com
 
             lf_ref_pos[k] = left_foot_path[k]
-            # lf_pin_pos[k] = talos.data.oMf[talos.left_foot_id].translation
             lf_muj_pos[k]= data.site_xpos[left_foot_site_id]
 
             rf_ref_pos[k] = right_foot_path[k]
-            # rf_pin_pos[k] = talos.data.oMf[talos.right_foot_id].translation
             rf_muj_pos[k] = data.site_xpos[right_foot_site_id]
 
             viewer.sync()
 
+        # Save cyclic and openingstep keyframes
         if args.make_keyframes:
             if isinstance(args.make_keyframes, str):
                 filename_cyclic = Path(args.make_keyframes)
@@ -381,68 +388,67 @@ def main():
                 f.write("  </keyframe>\n</mujoco>\n")
             print(f"Opening keyframes written to {filename_opening}")
 
-        plotlenght = 1540
         plt.figure(figsize=(40, 30))
         plt.subplot(4, 4, 1)
-        plt.plot(com_ref_pos[:plotlenght, 0],label="CoM Reference-x", linestyle="--")
-        plt.plot(com_muj_pos[:plotlenght, 0] ,label="CoM Actual-x (MuJoCo)", linestyle="-")
+        plt.plot(com_ref_pos[:, 0],label="CoM Reference-x", linestyle="--")
+        plt.plot(com_muj_pos[:, 0] ,label="CoM Actual-x (MuJoCo)", linestyle="-")
         plt.legend()
         
         plt.subplot(4, 4, 2)
-        plt.plot(com_ref_pos[:plotlenght, 1],label="CoM Reference-y", linestyle="--")
-        plt.plot(com_muj_pos[:plotlenght, 1] ,label="CoM Actual-y (MuJoCo)", linestyle="-") 
+        plt.plot(com_ref_pos[:, 1],label="CoM Reference-y", linestyle="--")
+        plt.plot(com_muj_pos[:, 1] ,label="CoM Actual-y (MuJoCo)", linestyle="-") 
         plt.legend()
 
         plt.subplot(4, 4, 3)
-        plt.plot(com_ref_pos[:plotlenght, 2],label="CoM Reference-z", linestyle="--")
-        plt.plot(com_muj_pos[:plotlenght, 2] ,label="CoM Actual-z (MuJoCo)", linestyle="-")
+        plt.plot(com_ref_pos[:, 2],label="CoM Reference-z", linestyle="--")
+        plt.plot(com_muj_pos[:, 2] ,label="CoM Actual-z (MuJoCo)", linestyle="-")
 
         plt.legend()
 
         plt.subplot(4, 4, 4)
-        plt.plot(lf_ref_pos[:plotlenght, 2], label="Left Foot Reference (z)", linestyle="--")
-        plt.plot(lf_muj_pos[:plotlenght, 2], label="Left Foot Actual (MuJoCo)", linestyle="-")
-        plt.plot(lf_ik_pos[:plotlenght, 2], label="Left Foot IK Solution (z)", linestyle=":")
+        plt.plot(lf_ref_pos[:, 2], label="Left Foot Reference (z)", linestyle="--")
+        plt.plot(lf_muj_pos[:, 2], label="Left Foot Actual (MuJoCo)", linestyle="-")
+        plt.plot(lf_ik_pos[:, 2], label="Left Foot IK Solution (z)", linestyle=":")
         plt.legend()
         plt.subplot(4, 4, 5)
-        plt.plot(qpos_des[:plotlenght, 8], label="L FE desired", linestyle="--")
-        plt.plot(qpos_act[:plotlenght, 8], label="L FE actual", linestyle="-")
+        plt.plot(qpos_des[:, 8], label="L FE desired", linestyle="--")
+        plt.plot(qpos_act[:, 8], label="L FE actual", linestyle="-")
         plt.legend()
         plt.subplot(4, 4, 6)
-        plt.plot(qpos_des[:plotlenght, 9], label="L KNEE desired", linestyle="--")
-        plt.plot(qpos_act[:plotlenght, 9], label="L KNEE actual", linestyle="-")
+        plt.plot(qpos_des[:, 9], label="L KNEE desired", linestyle="--")
+        plt.plot(qpos_act[:, 9], label="L KNEE actual", linestyle="-")
         plt.legend()
         plt.subplot(4, 4, 7)
-        plt.plot(qpos_des[:plotlenght, 7], label="L AA desired", linestyle="--")
-        plt.plot(qpos_act[:plotlenght, 7], label="L AA actual", linestyle="-")
+        plt.plot(qpos_des[:, 7], label="L AA desired", linestyle="--")
+        plt.plot(qpos_act[:, 7], label="L AA actual", linestyle="-")
         plt.legend()
         plt.subplot(4, 4, 8)
-        plt.plot(qpos_des[:plotlenght, 10], label="L ADPF desired", linestyle="--")
-        plt.plot(qpos_act[:plotlenght, 10], label="L ADPF actual", linestyle="-")
+        plt.plot(qpos_des[:, 10], label="L ADPF desired", linestyle="--")
+        plt.plot(qpos_act[:, 10], label="L ADPF actual", linestyle="-")
         plt.legend()
         plt.subplot(4, 4, 9)
-        plt.plot(qpos_des[:plotlenght, 11], label="L IE desired", linestyle="--")
-        plt.plot(qpos_act[:plotlenght, 11], label="L IE actual", linestyle="-")
+        plt.plot(qpos_des[:, 11], label="L IE desired", linestyle="--")
+        plt.plot(qpos_act[:, 11], label="L IE actual", linestyle="-")
         plt.legend()
         plt.subplot(4, 4, 10)
-        plt.plot(qpos_des[:plotlenght, 13], label="R FE desired", linestyle="--")
-        plt.plot(qpos_act[:plotlenght, 13], label="R FE actual", linestyle="-")
+        plt.plot(qpos_des[:, 13], label="R FE desired", linestyle="--")
+        plt.plot(qpos_act[:, 13], label="R FE actual", linestyle="-")
         plt.legend()
         plt.subplot(4, 4, 11)
-        plt.plot(qpos_des[:plotlenght, 14], label="R KNEE desired", linestyle="--")
-        plt.plot(qpos_act[:plotlenght, 14], label="R KNEE actual", linestyle="-")
+        plt.plot(qpos_des[:, 14], label="R KNEE desired", linestyle="--")
+        plt.plot(qpos_act[:, 14], label="R KNEE actual", linestyle="-")
         plt.legend()
         plt.subplot(4, 4, 12)
-        plt.plot(qpos_des[:plotlenght, 12], label="R AA desired", linestyle="--")
-        plt.plot(qpos_act[:plotlenght, 12], label="R AA actual", linestyle="-")
+        plt.plot(qpos_des[:, 12], label="R AA desired", linestyle="--")
+        plt.plot(qpos_act[:, 12], label="R AA actual", linestyle="-")
         plt.legend()
         plt.subplot(4, 4, 13)
-        plt.plot(qpos_des[:plotlenght, 15], label="R ADPF desired", linestyle="--")
-        plt.plot(qpos_act[:plotlenght, 15], label="R ADPF actual", linestyle="-")
+        plt.plot(qpos_des[:, 15], label="R ADPF desired", linestyle="--")
+        plt.plot(qpos_act[:, 15], label="R ADPF actual", linestyle="-")
         plt.legend()
         plt.subplot(4, 4, 14)
-        plt.plot(qpos_des[:plotlenght, 16], label="R IE desired", linestyle="--")
-        plt.plot(qpos_act[:plotlenght, 16], label="R IE actual", linestyle="-")
+        plt.plot(qpos_des[:, 16], label="R IE desired", linestyle="--")
+        plt.plot(qpos_act[:, 16], label="R IE actual", linestyle="-")
         plt.legend()
         plt.show()
 if __name__ == "__main__":
