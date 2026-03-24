@@ -334,7 +334,7 @@ def main():
                 low_level_update(model, data, joint_gains=joint_gains, desired_pos=q_des[7:])
                 # Integrate one step in the simulation
                 mujoco.mj_step(model, data)
-            elif args.ik:
+            else:
                 data.qpos[:] = q_des
                 mujoco.mj_forward(model, data)  
 
@@ -367,6 +367,7 @@ def main():
                 filename_cyclic = Path(args.make_keyframes)
             else:
                 filename_cyclic = Path(__file__).parent / "keyframe_gaits" / f"cyclic_gait-{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.xml"
+                filename_cyclic_airgait = Path(__file__).parent / "keyframe_gaits" / f"cyclic_airgait-{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.xml"
                 filename_opening = Path(__file__).parent / "keyframe_gaits" / f"opening_gait-{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.xml"
             with open (filename_cyclic, "w") as f:
                 f.write("<mujoco>\n")
@@ -375,16 +376,25 @@ def main():
 
                 f.write("  <keyframe>\n")
                 for i in range(key_cyclic.shape[0]):
-                    f.write(f"    <key name='spin_{i}' qpos='{float(key_cyclic[i, 0])} {float(key_cyclic[i, 1])} {float(key_cyclic[i, 2])} {float(key_cyclic[i, 3])} {float(key_cyclic[i, 4])} {float(key_cyclic[i, 5])} {float(key_cyclic[i, 6])} {float(key_cyclic[i, 7])} {float(key_cyclic[i, 8])} {float(key_cyclic[i, 9])} {float(key_cyclic[i, 10])} {float(key_cyclic[i, 11])} {float(key_cyclic[i, 12])} {float(key_cyclic[i, 13])} {float(key_cyclic[i, 14])} {float(key_cyclic[i, 15])} {float(key_cyclic[i, 16])}' />\n") 
+                    f.write(f"    <key name='cyclic_{i}' qpos='{float(key_cyclic[i, 0])} {float(key_cyclic[i, 1])} {float(key_cyclic[i, 2])} {float(key_cyclic[i, 3])} {float(key_cyclic[i, 4])} {float(key_cyclic[i, 5])} {float(key_cyclic[i, 6])} {float(key_cyclic[i, 7])} {float(key_cyclic[i, 8])} {float(key_cyclic[i, 9])} {float(key_cyclic[i, 10])} {float(key_cyclic[i, 11])} {float(key_cyclic[i, 12])} {float(key_cyclic[i, 13])} {float(key_cyclic[i, 14])} {float(key_cyclic[i, 15])} {float(key_cyclic[i, 16])}' />\n") 
                 f.write("  </keyframe>\n</mujoco>\n")
             print(f"Cyclic keyframes written to {filename_cyclic}")
+            with open (filename_cyclic_airgait, "w") as f:
+                f.write("<mujoco>\n")
+                f.write(f"<!-- Gait paramaters: t_ss={scen_params.t_ss}, t_ds={scen_params.t_ds}, l_stride={scen_params.l_stride}, max_height_foot={scen_params.max_height_foot} -->\n")
+                f.write(f"<!-- IK solver weights: backpack orientation: {backpack_orientation_task.orientation_cost} feet position: {left_foot_task.position_cost} feet orientation: {left_foot_task.orientation_cost} damping: {damping_task.cost} com: {com_task.cost} -->\n")
+
+                f.write("  <keyframe>\n")
+                for i in range(key_cyclic.shape[0]):
+                    f.write(f"    <key name='cyclic_{i}' qpos='{float(key_cyclic[i, 7])} {float(key_cyclic[i, 8])} {float(key_cyclic[i, 9])} {float(key_cyclic[i, 10])} {float(key_cyclic[i, 11])} {float(key_cyclic[i, 12])} {float(key_cyclic[i, 13])} {float(key_cyclic[i, 14])} {float(key_cyclic[i, 15])} {float(key_cyclic[i, 16])}' />\n") 
+                f.write("  </keyframe>\n</mujoco>\n")
             with open (filename_opening, "w") as f:
                 f.write("<mujoco>\n")
                 f.write(f"<!-- Gait paramaters: t_ss={scen_params.t_ss}, t_ds={scen_params.t_ds}, l_stride={scen_params.l_stride}, max_height_foot={scen_params.max_height_foot} -->\n")
                 f.write(f"<!-- IK solver weights: backpack orientation: {backpack_orientation_task.orientation_cost} feet position: {left_foot_task.position_cost} feet orientation: {left_foot_task.orientation_cost} damping: {damping_task.cost} com: {com_task.cost} -->\n")
                 f.write("  <keyframe>\n")
                 for i in range(key_opening.shape[0]):
-                    f.write(f"    <key name='spin_{i}' qpos='{float(key_opening[i, 0])} {float(key_opening[i, 1])} {float(key_opening[i, 2])} {float(key_opening[i, 3])} {float(key_opening[i, 4])} {float(key_opening[i, 5])} {float(key_opening[i, 6])} {float(key_opening[i, 7])} {float(key_opening[i, 8])} {float(key_opening[i, 9])} {float(key_opening[i, 10])} {float(key_opening[i, 11])} {float(key_opening[i, 12])} {float(key_opening[i, 13])} {float(key_opening[i, 14])} {float(key_opening[i, 15])} {float(key_opening[i, 16])}' />\n") 
+                    f.write(f"    <key name='opening_{i}' qpos='{float(key_opening[i, 0])} {float(key_opening[i, 1])} {float(key_opening[i, 2])} {float(key_opening[i, 3])} {float(key_opening[i, 4])} {float(key_opening[i, 5])} {float(key_opening[i, 6])} {float(key_opening[i, 7])} {float(key_opening[i, 8])} {float(key_opening[i, 9])} {float(key_opening[i, 10])} {float(key_opening[i, 11])} {float(key_opening[i, 12])} {float(key_opening[i, 13])} {float(key_opening[i, 14])} {float(key_opening[i, 15])} {float(key_opening[i, 16])}' />\n") 
                 f.write("  </keyframe>\n</mujoco>\n")
             print(f"Opening keyframes written to {filename_opening}")
 
