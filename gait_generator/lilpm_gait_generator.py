@@ -159,6 +159,9 @@ def main():
     ##############
     # LIPM setup #
     ##############
+    x_offset = data.site_xpos[model.site(left_foot_name).id][0]
+    data.qpos[0] = data.qpos[0] - x_offset
+    mujoco.mj_forward(model, data)  # Update all dependent quantities after changing q
     right_foot_site_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SITE, "pos_R_foot")
     left_foot_site_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SITE, "pos_L_foot")
     right_foot_body_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "R_foot")
@@ -205,6 +208,13 @@ def main():
         dt=scen_params.dt,
         traj_generator=BezierCurveFootPathGenerator(scen_params.max_height_foot),
     )
+    plt.plot(t, left_foot_path[:, 0], label="Left foot z trajectory")
+    plt.plot(t, right_foot_path[:, 0], label="Right foot z trajectory")
+    plt.legend()
+    plt.show()
+    print(left_foot_path[1000, 0] - left_foot_path[750, 0])
+    print(right_foot_path[750, 0] - right_foot_path[500, 0])
+
     zmp_ref = compute_zmp_ref(
         t=t,
         com_initial_pose=com_initial_target[0:2],
