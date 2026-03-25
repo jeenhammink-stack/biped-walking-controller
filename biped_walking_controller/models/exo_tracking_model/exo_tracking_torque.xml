@@ -124,7 +124,7 @@
               <gyro name='vel_imu_backpack' site='imu_backpack' noise='5e-4' cutoff='34.9'/>
               <accelerometer name='acc_imu_backpack' site='imu_backpack' noise='1e-5' cutoff='157'/>
           </sensor>
-            <keyframe><key name='home' qpos=' -0.11381307 0 1.034 0.9990482 0.0 0.0436194 0 -0.0538850788003355 -0.163444867517726 0.3114220463634088 -0.20627090627386732 0.0538736103022484 0.0538904247681917 -0.1634221502873682 0.3113776463689615 -0.20627090627386732 -0.0538794144550795'/></keyframe><worldbody><geom name='floor' size='0 0 .05' type='plane' material='grid' pos='0 0 0' conaffinity='15' condim='6' solref='0.000002 1' solimp='0.99 0.999 0.000001' friction='3 0.005 0.0001'/><light name='spotlight' mode='targetbodycom' target='backpack' diffuse='.8 .8 .8' specular='0.3 0.3 0.3' pos='0 -20 4' cutoff='10'/>
+            <keyframe><key name='home' qpos=' -0.11381307 0 1.034 0.9990482 0.0 0.0436194 0 -0.0538850788003355 -0.163444867517726 0.3114220463634088 -0.20627090627386732 0.0538850788003355 0.0538850788003355 -0.1634448675177260 0.3114220463634088 -0.20627090627386732 -0.0538850788003355'/></keyframe><worldbody><geom name='floor' size='0 0 .05' type='plane' material='grid' pos='0 0 0' conaffinity='15' condim='6' solref='0.000002 1' solimp='0.99 0.999 0.000001' friction='3 0.005 0.0001'/><light name='spotlight' mode='targetbodycom' target='backpack' diffuse='.8 .8 .8' specular='0.3 0.3 0.3' pos='0 -20 4' cutoff='10'/>
             <!-- <keyframe><key name='home' qpos='-0.0538850788003355 -0.163444867517726 0.3114220463634088 -0.20627090627386732 0.0538736103022484 0.0538904247681917 -0.1634221502873682 0.3113776463689615 -0.20627090627386732 -0.0538794144550795'/></keyframe><worldbody><geom name='floor' size='0 0 .05' type='plane' material='grid' pos='0 0 0' conaffinity='15' condim='6' solref='0.000002 1' solimp='0.99 0.999 0.000001' friction='3 0.005 0.0001'/><light name='spotlight' mode='targetbodycom' target='backpack' diffuse='.8 .8 .8' specular='0.3 0.3 0.3' pos='0 -20 4' cutoff='10'/> -->
 
               <!-- <keyframe><key name='home' qpos='-0.0463558032077022 0.24486128453598172 0.5676614531497716 0.280997956767429 -0.0463558032077022 0.0420078979603756 0.3590018018427899 0.1958563777959386 -0.020976551438732657 -0.1347195043757801'/></keyframe><worldbody><geom name='floor' size='0 0 .05' type='plane' material='grid' pos='0 0 0' conaffinity='15' condim='6' solref='0.000002 1' solimp='0.99 0.999 0.000001' friction='3 0.005 0.0001'/><light name='spotlight' mode='targetbodycom' target='backpack' diffuse='.8 .8 .8' specular='0.3 0.3 0.3' pos='0 -20 4' cutoff='10'/> -->
@@ -206,7 +206,7 @@
                <body name="L_foot" pos="-0.13500 -0.1200 -0.02600">
                   <inertial mass="4.440" pos=" 0.16300 0.02400 -0.06000" fullinertia="0.04700 0.19090 0.17630 -0.01390 0.04760 -0.00130" />
                   <joint name="left_ankle_ie" pos="-0.0 -0.0 -0.0" axis="1 0 0" range="-10 10" class="AIE_joint" />
-                  <site name="pos_L_foot" pos="0.1800 0.00000 -0.11911279" size="0.01" rgba="1 0 0 0.5" />
+                  <site name="pos_L_foot" pos="0.1800 0.00000 -0.12" size="0.01" rgba="1 0 0 0.5" />
                   
                   <!-- Multi-point contact system for left foot -->
                   <!-- Back-right corner -->
@@ -287,7 +287,7 @@
 
                     
 
-             <body name="R_ankle" pos="0.00200 0.02500 -0.46800">
+             <body name="R_ankle" pos="0.000 0.02500 -0.46800">
                 <inertial mass="0.515" pos=" 0.00400 0.06000 -0.01800" fullinertia="0.00240 0.00270 0.00460 0.00010 0.00000 0.00060" />
                 
                 <site name="pos_R_ankle" size="0.01" pos="0.00000 0.00000 0.00000" />
@@ -303,7 +303,7 @@
                     <joint name="right_ankle_ie" pos="-0.0 0.0 -0.0" axis="1 0 0" range="-10 10" class="AIE_joint" /> 
                   <inertial mass="4.440" pos=" 0.16700 -0.02600 -0.06100" fullinertia="0.04700 0.19280 0.17840 0.01520 0.04800 0.00080" />
                   <geom name="R_Foot" type="mesh" mesh="R_Sole" />
-                  <site name="pos_R_foot" pos="0.18000 0.0000 -0.11911279" size="0.01" rgba="1 0 0 0.5" />
+                  <site name="pos_R_foot" pos="0.18000 0.0000 -0.12" size="0.01" rgba="1 0 0 0.5" />
                   
                   <!-- Multi-point contact system for right foot -->
                   <!-- Back-left corner -->
