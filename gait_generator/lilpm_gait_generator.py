@@ -159,8 +159,10 @@ def main():
     ##############
     # LIPM setup #
     ##############
-    x_offset = data.site_xpos[model.site(left_foot_name).id][0]
-    data.qpos[0] = data.qpos[0] - x_offset
+    lf_x_offset = data.site_xpos[model.site(left_foot_name).id][0]
+    rf_x_offset = data.site_xpos[model.site(right_foot_name).id][0]
+    print(lf_x_offset-rf_x_offset)
+    data.qpos[0] = data.qpos[0] - lf_x_offset
     mujoco.mj_forward(model, data)  # Update all dependent quantities after changing q
     right_foot_site_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SITE, "pos_R_foot")
     left_foot_site_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SITE, "pos_L_foot")
@@ -312,7 +314,6 @@ def main():
                     is_openings_step = False
                     is_cyclic += 1
             else:
-                print(is_cyclic)
                 ik_sol_params.fixed_foot_frame = left_foot_name
                 ik_sol_params.moving_foot_frame = right_foot_name
 
@@ -332,7 +333,6 @@ def main():
                     params=ik_sol_params,
                 )
                 if is_cyclic == 2:
-                    print("First cyclic step completed, starting to record cyclic keyframes.")
                     key_cyclic = np.vstack([key_cyclic, q_des.copy()])
 
                 if phases[k + 1] < 0.0:
